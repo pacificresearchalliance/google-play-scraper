@@ -1,5 +1,5 @@
 {
-    "name": "nelexa/google-play-scraper",
+    "name": "porshe/google-play-scraper",
     "type": "library",
     "description": "Scrapes app data from Google Play store.",
     "keywords": [
