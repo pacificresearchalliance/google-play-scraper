@@ -29,7 +29,6 @@ use Nelexa\GPlay\Util\ScraperUtil;
 use Nelexa\HttpClient\ResponseHandlerInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
-use function GuzzleHttp\Psr7\parse_query;
 
 /**
  * @internal
@@ -46,7 +45,7 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     public function __invoke(RequestInterface $request, ResponseInterface $response): AppInfo
     {
-        $query = parse_query($request->getUri()->getQuery());
+        $query = \GuzzleHttp\Psr7\Query::parse($request->getUri()->getQuery());
 
         $id = $query[GPlayApps::REQ_PARAM_ID];
         $locale = $query[GPlayApps::REQ_PARAM_LOCALE] ?? GPlayApps::DEFAULT_LOCALE;
@@ -260,7 +259,7 @@ class AppInfoScraper implements ResponseHandlerInterface
     private function extractDeveloper(array $scriptDataInfo): Developer
     {
         $developerPage = GPlayApps::GOOGLE_PLAY_URL . $scriptDataInfo[0][12][5][5][4][2];
-        $developerId = parse_query(parse_url($developerPage, \PHP_URL_QUERY))[GPlayApps::REQ_PARAM_ID];
+        $developerId = \GuzzleHttp\Psr7\Query::parse(parse_url($developerPage, \PHP_URL_QUERY))[GPlayApps::REQ_PARAM_ID];
         $developerName = $scriptDataInfo[0][12][5][1];
         $developerEmail = $scriptDataInfo[0][12][5][2][0] ?? null;
         $developerWebsite = $scriptDataInfo[0][12][5][3][5][2] ?? null;
