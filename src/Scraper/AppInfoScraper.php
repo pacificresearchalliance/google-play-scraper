@@ -29,6 +29,7 @@ use Nelexa\GPlay\Util\ScraperUtil;
 use Nelexa\HttpClient\ResponseHandlerInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use function GuzzleHttp\Psr7\parse_query;
 
 /**
  * @internal
@@ -45,7 +46,7 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     public function __invoke(RequestInterface $request, ResponseInterface $response): AppInfo
     {
-        $query = \GuzzleHttp\Psr7\Query::parse($request->getUri()->getQuery());
+        $query = parse_query($request->getUri()->getQuery());
 
         $id = $query[GPlayApps::REQ_PARAM_ID];
         $locale = $query[GPlayApps::REQ_PARAM_LOCALE] ?? GPlayApps::DEFAULT_LOCALE;
@@ -59,61 +60,56 @@ class AppInfoScraper implements ResponseHandlerInterface
             $scriptDataVersion,
             $scriptDataReviews,
         ] = $this->getScriptData($request, $response);
-
-        $name = $scriptDataInfo[0][0][0];
+//dd(
+////    $scriptDataInfo,
+////    $scriptDataRating,
+//    $scriptDataPrice,
+//    $scriptDataVersion,
+//    $scriptDataReviews,
+//);
+        $name = $scriptDataInfo[1][2][0][0];
         $description = $this->extractDescription($scriptDataInfo);
         $translatedFromLocale = $this->extractTranslatedFromLocale($scriptDataInfo, $locale);
         $developer = $this->extractDeveloper($scriptDataInfo);
 
-        if (isset($scriptDataInfo[0][12][13][0][0])) {
-            $category = $this->extractCategory($scriptDataInfo[0][12][13][0]);
-        } elseif (!empty($data[0][12][13][25])) {
-            $genreId = (string) $data[0][12][13][25];
-            $genreName = ucwords(strtolower(str_replace(['_', 'AND'], [' ', '&'], $genreId)));
-            $category = new Category($genreId, $genreName);
+        if (isset($scriptDataInfo[1][2][79][0][0])) {
+            $category = $this->extractCategory($scriptDataInfo[1][2][79][0][0]);
+        } elseif (!empty($data[1][2][118][0][0][0])) {
+            $category = $this->extractCategory($scriptDataInfo[1][2][118][0][0][0]);
         } else {
             $category = null;
         }
+
         $summary = $this->extractSummary($scriptDataInfo);
-        $installs = $scriptDataInfo[0][12][9][2] ?? 0;
-        $score = (float) ($scriptDataRating[0][6][0][1] ?? 0);
-        $numberVoters = (int) ($scriptDataRating[0][6][2][1] ?? 0);
-        $numberReviews = (int) ($scriptDataRating[0][6][3][1] ?? 0);
+        $installs = $scriptDataInfo[1][2][13][2] ?? 0;
+        $score = (float) ($scriptDataRating[0][0] ?? 0);
+        $numberVoters = (int) ($scriptDataRating[2][1] ?? 0);
+        $numberReviews = (int) ($scriptDataRating[3][1] ?? 0);
         $histogramRating = $this->extractHistogramRating($scriptDataRating);
         $price = $scriptDataPrice !== null ? $this->extractPrice($scriptDataPrice) : 0.0;
-        $currency = $scriptDataPrice[0][2][0][0][0][1][0][1] ?? 'USD';
-        $priceText = $scriptDataPrice[0][2][0][0][0][1][0][2] ?? null;
+        $currency = $scriptDataPrice[1][2][57][0][0][0][0][1][0][1] ?? 'USD';
+        $priceText = $scriptDataPrice[1][2][57][0][0][0][0][1][0][2] ?? null;
         $offersIAPCost = $scriptDataInfo[0][12][12][0] ?? null;
-        $containsAds = (bool) ($scriptDataInfo[0][12][14][0] ?? false);
+        $containsAds = (bool) ($scriptDataInfo[1][2][48][0] ?? false);
 
-        [$size, $appVersion, $androidVersion] = $scriptDataVersion;
-
-        if (LocaleHelper::isDependOnDevice($locale, $size)) {
-            $size = null;
-        }
-
-        if (LocaleHelper::isDependOnDevice($locale, $appVersion)) {
-            $appVersion = null;
-        }
-
-        if (LocaleHelper::isDependOnDevice($locale, $androidVersion)) {
-            $androidVersion = null;
-            $minAndroidVersion = null;
-        } else {
-            $minAndroidVersion = preg_replace('~.*?(\d+(\.\d+)*).*~', '$1', $androidVersion);
-        }
+        $appVersion = $scriptDataVersion[0][0][0] ?? '';
+        $size = null;
+        $androidVersion = $scriptDataVersion[1][0][0][1] ?? '';
+        $minAndroidVersion = $scriptDataVersion[1][1][0][0][1] ?? preg_replace('~.*?(\d+(\.\d+)*).*~', '$1', $androidVersion);;
 
         $editorsChoice = !empty($scriptDataInfo[0][12][15][1][1]);
-        $privacyPoliceUrl = $scriptDataInfo[0][12][7][2] ?? '';
+        $privacyPoliceUrl = $scriptDataInfo[1][2][99][0][5][2] ?? '';
         $categoryFamily = $this->extractCategory($scriptDataInfo[0][12][13][1] ?? []);
         $icon = $this->extractIcon($scriptDataInfo);
         $cover = $this->extractCover($scriptDataInfo);
         $screenshots = $this->extractScreenshots($scriptDataInfo);
+
         $video = $this->extractVideo($scriptDataInfo);
-        $contentRating = $scriptDataInfo[0][12][4][0] ?? '';
+        $contentRating = $scriptDataInfo[1][2][111][1] ?? '';
         $released = $this->extractReleaseDate($scriptDataInfo, $locale);
         $updated = $this->extractUpdatedDate($scriptDataInfo);
         $recentChanges = $this->extractRecentChanges($scriptDataInfo);
+
         $reviews = $this->extractReviews(new AppId($id, $locale, $country), $scriptDataReviews);
 
         return AppInfo::newBuilder()
@@ -131,11 +127,6 @@ class AppInfoScraper implements ResponseHandlerInterface
             ->setCategory($category)
             ->setCategoryFamily($categoryFamily)
             ->setVideo($video)
-            ->setRecentChanges($recentChanges)
-            ->setEditorsChoice($editorsChoice)
-            ->setPrivacyPoliceUrl($privacyPoliceUrl)
-            ->setInstalls($installs)
-            ->setScore($score)
             ->setRecentChanges($recentChanges)
             ->setEditorsChoice($editorsChoice)
             ->setPrivacyPoliceUrl($privacyPoliceUrl)
@@ -172,28 +163,24 @@ class AppInfoScraper implements ResponseHandlerInterface
     private function getScriptData(RequestInterface $request, ResponseInterface $response): array
     {
         $scriptData = ScraperUtil::extractScriptData($response->getBody()->getContents());
-
         $scriptDataInfo = null;
         $scriptDataRating = null;
         $scriptDataPrice = null;
         $scriptDataVersion = null;
         $scriptDataReviews = [];
-
+//dd($scriptData);
         foreach ($scriptData as $key => $scriptValue) {
-            if (isset($scriptValue[0][12][5][5][4][2])) { // ds:5
+//            dd($key, $scriptValue);die();
+
+            if (isset($scriptValue[1][2][0][0]) && \is_string($scriptValue[1][2][0][0]) && isset($scriptValue[1][2][77][0])) { // ds:4
                 $scriptDataInfo = $scriptValue;
-            } elseif (isset($scriptValue[0][2][0][0][0][1][0][0])) { // ds:3
-                $scriptDataPrice = $scriptValue;
+                $scriptDataVersion = $scriptValue[1][2][140];
+                $scriptDataRating = $scriptValue[1][2][51];
+                $scriptDataPrice = $scriptValue[1][2][57];
             } elseif (isset($scriptValue[0][0][0])
                 && \is_string($scriptValue[0][0][0])
-                && strpos($scriptValue[0][0][0], 'gp:') === 0) { // ds:15
+                && strpos($scriptValue[0][0][0], 'gp:') === 0) { // ds:8
                 $scriptDataReviews = $scriptValue;
-            } elseif (isset($scriptValue[0][6][3][1])) { // ds:7
-                $scriptDataRating = $scriptValue;
-            } elseif (isset($scriptValue[0])
-                && \is_string($scriptValue[0])
-                && \count($scriptValue) === 3) { // ds:8
-                $scriptDataVersion = $scriptValue;
             }
         }
 
@@ -232,11 +219,11 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     private function extractDescription(array $scriptDataInfo): string
     {
-        if (isset($scriptDataInfo[0][19][0][0][1])) {
-            return ScraperUtil::html2text($scriptDataInfo[0][19][0][0][1]);
+        if (isset($scriptDataInfo[1][2][72][0][1])) {
+            return ScraperUtil::html2text($scriptDataInfo[1][2][72][0][1]);
         }
 
-        return ScraperUtil::html2text($scriptDataInfo[0][10][0][1]);
+        return ScraperUtil::html2text($scriptDataInfo[1][2][144][1][1] ?? '');
     }
 
     /**
@@ -246,9 +233,9 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     private function extractSummary(array $scriptDataInfo): ?string
     {
-        return empty($scriptDataInfo[0][10][1][1]) ?
+        return empty($scriptDataInfo[1][2][73][0][1]) ?
             null :
-            ScraperUtil::html2text($scriptDataInfo[0][10][1][1]);
+            ScraperUtil::html2text($scriptDataInfo[1][2][73][0][1]);
     }
 
     /**
@@ -258,12 +245,12 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     private function extractDeveloper(array $scriptDataInfo): Developer
     {
-        $developerPage = GPlayApps::GOOGLE_PLAY_URL . $scriptDataInfo[0][12][5][5][4][2];
-        $developerId = \GuzzleHttp\Psr7\Query::parse(parse_url($developerPage, \PHP_URL_QUERY))[GPlayApps::REQ_PARAM_ID];
-        $developerName = $scriptDataInfo[0][12][5][1];
-        $developerEmail = $scriptDataInfo[0][12][5][2][0] ?? null;
-        $developerWebsite = $scriptDataInfo[0][12][5][3][5][2] ?? null;
-        $developerAddress = $scriptDataInfo[0][12][5][4][0] ?? null;
+        $developerPage = GPlayApps::GOOGLE_PLAY_URL . $scriptDataInfo[1][2][68][1][4][2];
+        $developerId = parse_query(parse_url($developerPage, \PHP_URL_QUERY))[GPlayApps::REQ_PARAM_ID];
+        $developerName = $scriptDataInfo[1][2][68][0];
+        $developerEmail = $scriptDataInfo[1][2][69][1][0] ?? null;
+        $developerWebsite = $scriptDataInfo[1][2][69][0][5][2] ?? null;
+        $developerAddress = $scriptDataInfo[1][2][69][2][0] ?? null;
 //        $developerInternalID = (int)$scriptDataInfo[0][12][5][0][0];
 
         return new Developer(
@@ -302,11 +289,11 @@ class AppInfoScraper implements ResponseHandlerInterface
     private function extractHistogramRating(?array $scriptDataRating): HistogramRating
     {
         return new HistogramRating(
-            $scriptDataRating[0][6][1][5][1] ?? 0,
-            $scriptDataRating[0][6][1][4][1] ?? 0,
-            $scriptDataRating[0][6][1][3][1] ?? 0,
-            $scriptDataRating[0][6][1][2][1] ?? 0,
-            $scriptDataRating[0][6][1][1][1] ?? 0
+            $scriptDataRating[1][5][1] ?? 0,
+            $scriptDataRating[1][4][1] ?? 0,
+            $scriptDataRating[1][3][1] ?? 0,
+            $scriptDataRating[1][2][1] ?? 0,
+            $scriptDataRating[1][1][1] ?? 0
         );
     }
 
@@ -317,8 +304,8 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     protected function extractPrice(array $scriptDataPrice): ?float
     {
-        return isset($scriptDataPrice[0][2][0][0][0][1][0][0]) ?
-            (float) ($scriptDataPrice[0][2][0][0][0][1][0][0] / 1000000) :
+        return isset($scriptDataPrice[1][2][57][0][0][0][0][1][0][0]) ?
+            (float) ($scriptDataPrice[1][2][57][0][0][0][0][1][0][0] / 1000000) :
             0.0;
     }
 
@@ -329,9 +316,9 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     protected function extractIcon(array $scriptDataInfo): ?GoogleImage
     {
-        return empty($scriptDataInfo[0][12][1][3][2]) ?
+        return empty($scriptDataInfo[1][2][95][0][3][2]) ?
             null :
-            new GoogleImage($scriptDataInfo[0][12][1][3][2]);
+            new GoogleImage($scriptDataInfo[1][2][95][0][3][2]);
     }
 
     /**
@@ -341,9 +328,9 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     protected function extractCover(array $scriptDataInfo): ?GoogleImage
     {
-        return empty($scriptDataInfo[0][12][2][3][2]) ?
+        return empty($scriptDataInfo[1][2][96][0][3][2]) ?
             null :
-            new GoogleImage($scriptDataInfo[0][12][2][3][2]);
+            new GoogleImage($scriptDataInfo[1][2][96][0][3][2]);
     }
 
     /**
@@ -353,11 +340,11 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     private function extractScreenshots(array $scriptDataInfo): array
     {
-        return !empty($scriptDataInfo[0][12][0]) ? array_map(
+        return !empty($scriptDataInfo[1][2][78][0]) ? array_map(
             static function (array $v) {
                 return new GoogleImage($v[3][2]);
             },
-            $scriptDataInfo[0][12][0]
+            $scriptDataInfo[1][2][78][0]
         ) : [];
     }
 
@@ -369,12 +356,12 @@ class AppInfoScraper implements ResponseHandlerInterface
     private function extractVideo(array $scriptDataInfo): ?Video
     {
         if (
-            isset($scriptDataInfo[0][12][3][0][3][2]) &&
-            $scriptDataInfo[0][12][3][0][3][2] !== null &&
-            $scriptDataInfo[0][12][3][1][3][2] !== null
+            isset($scriptDataInfo[1][2][100][0][0][3][2]) &&
+            $scriptDataInfo[1][2][100][0][0][3][2] !== null &&
+            $scriptDataInfo[1][2][100][0][1][3][2] !== null
         ) {
-            $videoThumb = (string) $scriptDataInfo[0][12][3][1][3][2];
-            $videoUrl = (string) $scriptDataInfo[0][12][3][0][3][2];
+            $videoThumb = (string) $scriptDataInfo[1][2][100][0][1][3][2];
+            $videoUrl = (string) $scriptDataInfo[1][2][100][0][0][3][2];
 
             return new Video($videoThumb, $videoUrl);
         }
@@ -390,8 +377,8 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     private function extractReleaseDate(array $scriptDataInfo, string $locale): ?\DateTimeInterface
     {
-        if (isset($scriptDataInfo[0][12][36])) {
-            return DateStringFormatter::formatted($locale, $scriptDataInfo[0][12][36]);
+        if (isset($scriptDataInfo[1][2][10][0])) {
+            return DateStringFormatter::formatted($locale, $scriptDataInfo[1][2][10][0]);
         }
 
         return null;
@@ -404,8 +391,8 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     private function extractUpdatedDate(array $scriptDataInfo): ?\DateTimeInterface
     {
-        if (isset($scriptDataInfo[0][12][8][0])) {
-            return DateStringFormatter::unixTimeToDateTime($scriptDataInfo[0][12][8][0]);
+        if (isset($scriptDataInfo[1][2][145][0][0])) {
+            return DateStringFormatter::unixTimeToDateTime($scriptDataInfo[1][2][145][0][0]);
         }
 
         return null;
@@ -418,9 +405,9 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     protected function extractRecentChanges($scriptDataInfo): ?string
     {
-        return empty($scriptDataInfo[0][12][6][1]) ?
+        return empty($scriptDataInfo[1][2][144][1][1]) ?
             null :
-            ScraperUtil::html2text($scriptDataInfo[0][12][6][1]);
+            ScraperUtil::html2text($scriptDataInfo[1][2][144][1][1]);
     }
 
     /**
