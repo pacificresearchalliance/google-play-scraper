@@ -29,7 +29,6 @@ use Nelexa\GPlay\Util\ScraperUtil;
 use Nelexa\HttpClient\ResponseHandlerInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
-use function GuzzleHttp\Psr7\parse_query;
 
 /**
  * @internal
@@ -46,7 +45,7 @@ class AppInfoScraper implements ResponseHandlerInterface
      */
     public function __invoke(RequestInterface $request, ResponseInterface $response): AppInfo
     {
-        $query = parse_query($request->getUri()->getQuery());
+        $query = \GuzzleHttp\Psr7\Query::parse($request->getUri()->getQuery());
 
         $id = $query[GPlayApps::REQ_PARAM_ID];
         $locale = $query[GPlayApps::REQ_PARAM_LOCALE] ?? GPlayApps::DEFAULT_LOCALE;
@@ -95,7 +94,7 @@ class AppInfoScraper implements ResponseHandlerInterface
         $appVersion = $scriptDataVersion[0][0][0] ?? '';
         $size = null;
         $androidVersion = $scriptDataVersion[1][0][0][1] ?? '';
-        $minAndroidVersion = $scriptDataVersion[1][1][0][0][1] ?? preg_replace('~.*?(\d+(\.\d+)*).*~', '$1', $androidVersion);;
+        $minAndroidVersion = $scriptDataVersion[1][1][0][0][1] ?? \preg_replace('~.*?(\d+(\.\d+)*).*~', '$1', $androidVersion);;
 
         $editorsChoice = !empty($scriptDataInfo[0][12][15][1][1]);
         $privacyPoliceUrl = $scriptDataInfo[1][2][99][0][5][2] ?? '';
@@ -246,7 +245,7 @@ class AppInfoScraper implements ResponseHandlerInterface
     private function extractDeveloper(array $scriptDataInfo): Developer
     {
         $developerPage = GPlayApps::GOOGLE_PLAY_URL . $scriptDataInfo[1][2][68][1][4][2];
-        $developerId = parse_query(parse_url($developerPage, \PHP_URL_QUERY))[GPlayApps::REQ_PARAM_ID];
+        $developerId = \GuzzleHttp\Psr7\Query::parse(\parse_url($developerPage, \PHP_URL_QUERY))[GPlayApps::REQ_PARAM_ID];
         $developerName = $scriptDataInfo[1][2][68][0];
         $developerEmail = $scriptDataInfo[1][2][69][1][0] ?? null;
         $developerWebsite = $scriptDataInfo[1][2][69][0][5][2] ?? null;
